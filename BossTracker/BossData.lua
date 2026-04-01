@@ -105,7 +105,7 @@ BossTracker_BossData = {
     { name = "Ingvar the Plunderer", id = 23954 },
   },
   ["Utgarde Pinnacle"] = {
-    { name = "Svala Sorrowgrave", id = 26668 },
+    { name = "Svala Sorrowgrave", completeOnYell = "Nooo! I did not come this far... to..." },
     { name = "Gortok Palehoof", id = 26687 },
     { name = "Skadi the Ruthless", id = 26693 },
     { name = "King Ymiron", id = 26861 },
@@ -174,7 +174,7 @@ BossTracker_BossData = {
     { name = "Meathook", id = 26529 },
     { name = "Salramm the Fleshcrafter", id = 26530 },
     { name = "Chrono-Lord Epoch", id = 26532 },
-    { name = "Mal'Ganis", id = 26533 },
+    { name = "Mal'Ganis", completeOnYell = "Your journey has just begun, young prince. Gather your forces and meet me in the arctic land of Northrend. It is there that we shall settle the score between us. It is there that your true destiny will unfold." },
   },
   -- Yell strings: DeadlyBossMods/DBM-Dungeons DBM-Party-WotLK localization.en.lua (mods 634, 636, 635) — DBM killMsgs[msg] exact match.
   ["Trial of the Champion"] = {
@@ -209,7 +209,7 @@ BossTracker_BossData = {
   ---------------------------------------------------------------------------
   -- The Burning Crusade (Dungeons — normal & heroic share the same zone name)
   ---------------------------------------------------------------------------
-  ["Hellfire Citadel: Hellfire Ramparts"] = {
+  ["Hellfire Citadel: Ramparts"] = {
     { name = "Watchkeeper Gargolmar", id = 17306 },
     { name = "Omor the Unscarred", id = 17308 },
     { name = "Vazruden & Nazan", ids = { 17537, 17536 }, all = true },
@@ -270,6 +270,8 @@ BossTracker_BossData = {
     { name = "Warp Splinter", id = 17977 },
   },
   ["Tempest Keep: The Mechanar"] = {
+    { name = "Gatewatcher Gyro-Kill", id = 19218 },
+    { name = "Gatewatcher Iron-Hand", id = 19710 },
     { name = "Mechano-Lord Capacitus", id = 19219 },
     { name = "Nethermancer Sepethrea", id = 19221 },
     { name = "Pathaleon the Calculator", id = 19220 },
@@ -576,7 +578,7 @@ BossTracker_BossData = {
     { name = "Kirtonos the Herald", id = 10506 },
     { name = "Jandice Barov", id = 10503 },
     { name = "Rattlegore", id = 11622 },
-    { name = "Marduk Blackpool", id = 10433 },
+    { name = "Vectus and Marduk Blackpool", ids = { 10433, 10432 }, all = true },
     { name = "Ras Frostwhisper", id = 10508 },
     { name = "Instructor Malicia", id = 10505 },
     { name = "Doctor Theolen Krastinov", id = 11261 },
