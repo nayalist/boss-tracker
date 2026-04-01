@@ -535,7 +535,7 @@ BossTracker_BossData = {
     { name = "Dreamscythe and Weaver", ids = { 5721, 5720 }, all = true },
     { name = "Morphaz and Hazzas", ids = { 5719, 5722 }, all = true },
     { name = "Shade of Eranikus", id = 5709 },
-    { name = "Avatar of Hakkar", id = 8443}
+    { name = "Avatar of Hakkar", id = 8443 },
     { name = "Atal'alarion", id = 8580 },
   },
   ["Blackrock Depths"] = {
