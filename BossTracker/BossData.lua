@@ -212,7 +212,7 @@ BossTracker_BossData = {
   ["Hellfire Citadel: Hellfire Ramparts"] = {
     { name = "Watchkeeper Gargolmar", id = 17306 },
     { name = "Omor the Unscarred", id = 17308 },
-    { name = "Vazruden & Nazan", id = 17537 },
+    { name = "Vazruden & Nazan", ids = { 17537, 17536 }, all = true },
   },
   ["Hellfire Citadel: The Blood Furnace"] = {
     { name = "The Maker", id = 17381 },
