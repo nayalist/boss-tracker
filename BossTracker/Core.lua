@@ -1,5 +1,5 @@
 --[[
-  BossTracker — main window (3.3.5a)
+  BossTracker — main window (3.3.5a) — v1.12
   Boss kill detection: NPC id from UNIT_DIED destGUID (Koality-of-Life style).
   Trial of the Champion: optional completeOnYell matches DBM RegisterKill("yell", L.YellCombatEnd) — full-line equality on CHAT_MSG_MONSTER_YELL (see DBM-Dungeons DBM-Party-WotLK localization + onMonsterMessage killMsgs[msg]).
   See BossData.lua for per-boss id / ids / completeOnSpellId / completeOnYell.
@@ -90,6 +90,13 @@ local timerPausedAt = nil
 local smPinnedWingIndex = nil
 -- Dire Maul only: last wing we resolved from subzone; kept through generic hallways until leaving instance.
 local dmPinnedWingIndex = nil
+-- Character DB: current run key (GetInstanceInfo()[8] or synthetic); nil outside an instance.
+local activeInstanceRunKey = nil
+-- Violet Hold (e.g. ChromieCraft): two "Select {boss}" gossip picks → show only those + Cyanigosa.
+local vhGossipPicks = {}
+local lastGossipOptionTitles = {}
+-- Last GetInstanceInfo() while inside a tracked instance — used on zone-out (outside, [2]/[3] are wrong).
+local lastTrackedInstanceInfo = nil
 
 local function NormalizeBossEntry(entry)
   if type(entry) == "string" then
@@ -136,6 +143,110 @@ local function ClearDetectionState()
   wipe(defeatElapsedAt)
   wipe(multikillDead)
   wipe(phaseKillCounts)
+  wipe(vhGossipPicks)
+end
+
+local function EnsureDB()
+  if type(BossTrackerDB) ~= "table" then
+    BossTrackerDB = {}
+  end
+  if type(BossTrackerDB.runs) ~= "table" then
+    BossTrackerDB.runs = {}
+  end
+end
+
+-- 3.3.5 clients may not expose GetServerTime(); use Lua time() as fallback (Unix seconds).
+local function GetServerTimeSeconds()
+  local gt = _G.GetServerTime
+  if type(gt) == "function" then
+    return gt()
+  end
+  if type(time) == "function" then
+    return time()
+  end
+  return GetTime()
+end
+
+-- Prefer instance id from GetInstanceInfo()[8]; fallback name+difficulty string (3.3.5 may omit [8]).
+local function GetInstanceRunKey()
+  local id8 = select(8, GetInstanceInfo())
+  if type(id8) == "number" and id8 > 0 then
+    return id8
+  end
+  local name = select(1, GetInstanceInfo())
+  local diff = select(3, GetInstanceInfo())
+  if type(diff) ~= "number" then
+    diff = 0
+  end
+  if name and name ~= "" then
+    return "btn:" .. name:gsub("[^%w]", "_") .. ":" .. tostring(diff)
+  end
+  return "unknown"
+end
+
+-- When [8] is missing, keys are only name+difficulty — a new LFD run still matches the old row.
+-- For normal 5-player dungeons only, we drop that SV row on zone-out (heroics/raids expect unique [8]).
+local function IsSyntheticInstanceRunKey(key)
+  return type(key) == "string" and key:sub(1, 4) == "btn:"
+end
+
+-- meta = { instanceType, difficulty } from last frame we were inside the instance.
+local function ShouldDeleteSyntheticRunOnZoneOut(meta)
+  if type(meta) ~= "table" then
+    return false
+  end
+  if meta.instanceType ~= "party" then
+    return false
+  end
+  local d = meta.difficulty
+  if type(d) ~= "number" then
+    return false
+  end
+  -- WotLK 5-player: 1 = normal, 2 = heroic. Raids use instanceType "raid" and are not cleared here.
+  return d == 1
+end
+
+local function DefeatedBossEntryName(entry)
+  if type(entry) == "string" then
+    return entry
+  end
+  if type(entry) == "table" and type(entry.name) == "string" then
+    return entry.name
+  end
+  return nil
+end
+
+-- Stores kill order + elapsed seconds from run start (same scale as defeatElapsedAt / UI timer).
+local function PersistDefeatedBoss(displayName, elapsed)
+  EnsureDB()
+  if not activeInstanceRunKey then
+    return
+  end
+  local rec = BossTrackerDB.runs[activeInstanceRunKey]
+  if not rec then
+    return
+  end
+  rec.defeatedBoss = rec.defeatedBoss or {}
+  for _, entry in ipairs(rec.defeatedBoss) do
+    if DefeatedBossEntryName(entry) == displayName then
+      return
+    end
+  end
+  table.insert(rec.defeatedBoss, {
+    name = displayName,
+    elapsedAt = elapsed,
+  })
+end
+
+local function PersistRunCompleted(elapsed)
+  EnsureDB()
+  if not activeInstanceRunKey then
+    return
+  end
+  local rec = BossTrackerDB.runs[activeInstanceRunKey]
+  if rec then
+    rec.completedElapsed = elapsed
+  end
 end
 
 local function GetScarletMonasteryWingIndex()
@@ -222,12 +333,84 @@ local function FilterBossListForPlayer(baseList)
   return filtered
 end
 
+local function trimStr(s)
+  if type(s) ~= "string" then
+    return ""
+  end
+  return (s:gsub("^%s*(.-)%s*$", "%1"))
+end
+
+local function IsVioletHoldInstanceName(name)
+  return name == "The Violet Hold" or name == "Violet Hold"
+end
+
+-- Map gossip text after "Select " (e.g. "Zuramat") to BossData display name (e.g. "Zuramat the Obliterator").
+local function ResolveVioletHoldGossipBossName(gossipSuffix)
+  local g = trimStr(gossipSuffix)
+  if g == "" then
+    return nil
+  end
+  local glower = string.lower(g)
+  for _, key in ipairs({ "The Violet Hold", "Violet Hold" }) do
+    local list = BossTracker_BossData and BossTracker_BossData[key]
+    if list then
+      for _, raw in ipairs(list) do
+        local e = NormalizeBossEntry(raw)
+        if e.name ~= "Cyanigosa" then
+          local nlower = string.lower(e.name)
+          if nlower == glower then
+            return e.name
+          end
+          local first = e.name:match("^([^%s]+)")
+          if first and string.lower(first) == glower then
+            return e.name
+          end
+          if #glower >= 4 and nlower:sub(1, #glower) == glower then
+            return e.name
+          end
+        end
+      end
+    end
+  end
+  return nil
+end
+
+local function GetVioletHoldFilteredBossList(baseList)
+  if not baseList or #vhGossipPicks ~= 2 then
+    return baseList
+  end
+  local byName = {}
+  for _, raw in ipairs(baseList) do
+    local e = NormalizeBossEntry(raw)
+    byName[e.name] = raw
+  end
+  local out = {}
+  for _, name in ipairs(vhGossipPicks) do
+    local raw = byName[name]
+    if raw then
+      table.insert(out, raw)
+    end
+  end
+  local cy = byName["Cyanigosa"]
+  if cy then
+    table.insert(out, cy)
+  end
+  if #out > 0 then
+    return out
+  end
+  return baseList
+end
+
 local function GetActiveBossList(instanceName)
   if not BossTracker_BossData or not instanceName then
     return nil
   end
   if instanceName ~= "Scarlet Monastery" and instanceName ~= "Dire Maul" then
-    return FilterBossListForPlayer(BossTracker_BossData[instanceName])
+    local base = FilterBossListForPlayer(BossTracker_BossData[instanceName])
+    if IsVioletHoldInstanceName(instanceName) then
+      return GetVioletHoldFilteredBossList(base)
+    end
+    return base
   end
   if instanceName == "Scarlet Monastery" then
     local smEffective = GetEffectiveScarletWingIndex()
@@ -257,6 +440,9 @@ local function GetNpcLookupCacheKey(instanceName)
       return instanceName .. "#w" .. tostring(effective)
     end
     return instanceName .. "#merge"
+  end
+  if IsVioletHoldInstanceName(instanceName) and #vhGossipPicks == 2 then
+    return instanceName .. "#g:" .. vhGossipPicks[1] .. ":" .. vhGossipPicks[2]
   end
   return instanceName
 end
@@ -315,6 +501,7 @@ local function MarkBossDefeated(displayName)
     elapsed = GetTime() - timerStart
   end
   defeatElapsedAt[displayName] = elapsed
+  PersistDefeatedBoss(displayName, elapsed)
 
   local instanceName = select(1, GetInstanceInfo())
   local list = GetActiveBossList(instanceName)
@@ -329,6 +516,7 @@ local function MarkBossDefeated(displayName)
     if remaining == 0 and timerStart and not timerPausedAt then
       timerPausedAt = elapsed
       frame:SetScript("OnUpdate", nil)
+      PersistRunCompleted(elapsed)
     end
   end
 end
@@ -704,6 +892,69 @@ local function StopTimerTick()
   frame:SetScript("OnUpdate", nil)
 end
 
+local function ApplyInstanceRunState()
+  EnsureDB()
+  local key = GetInstanceRunKey()
+  activeInstanceRunKey = key
+  local runs = BossTrackerDB.runs
+  local rec = runs[key]
+  if type(rec) ~= "table" then
+    rec = nil
+  end
+  ClearDetectionState()
+  if not rec then
+    rec = {
+      startServerTime = GetServerTimeSeconds(),
+      defeatedBoss = {},
+    }
+    runs[key] = rec
+    timerStart = GetTime()
+    timerPausedAt = nil
+  else
+    if type(rec.startServerTime) ~= "number" then
+      rec.startServerTime = GetServerTimeSeconds()
+    end
+    if rec.completedElapsed then
+      timerStart = GetTime() - rec.completedElapsed
+      timerPausedAt = rec.completedElapsed
+    else
+      local srvElapsed = GetServerTimeSeconds() - rec.startServerTime
+      if srvElapsed < 0 then
+        srvElapsed = 0
+      end
+      timerStart = GetTime() - srvElapsed
+      timerPausedAt = nil
+    end
+    local order = 0
+    for _, entry in ipairs(rec.defeatedBoss or {}) do
+      local name
+      local el
+      if type(entry) == "string" then
+        name = entry
+        el = order * 0.001
+      elseif type(entry) == "table" and type(entry.name) == "string" then
+        name = entry.name
+        if type(entry.elapsedAt) == "number" then
+          el = entry.elapsedAt
+        else
+          el = order * 0.001
+        end
+      end
+      if name then
+        defeatedNames[name] = true
+        defeatElapsedAt[name] = el
+        order = order + 1
+      end
+    end
+  end
+  UpdateTimerDisplay()
+  if rec.completedElapsed then
+    StopTimerTick()
+  else
+    StartTimerTick()
+  end
+end
+
 local function RefreshInstanceTitle()
   local name = select(1, GetInstanceInfo())
   if name and name ~= "" then
@@ -739,19 +990,16 @@ local function UpdateVisibility()
   local now = IsDungeonOrRaid()
   if now then
     local instName = select(1, GetInstanceInfo())
+    lastTrackedInstanceInfo = {
+      instanceType = select(2, GetInstanceInfo()),
+      difficulty = select(3, GetInstanceInfo()),
+    }
     RefreshInstanceTitle()
     if inTrackedInstance and lastTrackedInstanceName and lastTrackedInstanceName ~= instName then
-      ClearDetectionState()
-      timerStart = GetTime()
-      timerPausedAt = nil
-      UpdateTimerDisplay()
+      ApplyInstanceRunState()
     end
     if not inTrackedInstance then
-      ClearDetectionState()
-      timerStart = GetTime()
-      timerPausedAt = nil
-      StartTimerTick()
-      UpdateTimerDisplay()
+      ApplyInstanceRunState()
     end
     lastTrackedInstanceName = instName
     RefreshBossList()
@@ -759,13 +1007,20 @@ local function UpdateVisibility()
     inTrackedInstance = true
   else
     if inTrackedInstance then
+      local leavingKey = activeInstanceRunKey
       timerStart = nil
       timerPausedAt = nil
       StopTimerTick()
       timerText:SetText("00:00")
       ClearDetectionState()
+      if leavingKey and IsSyntheticInstanceRunKey(leavingKey) and ShouldDeleteSyntheticRunOnZoneOut(lastTrackedInstanceInfo) then
+        EnsureDB()
+        BossTrackerDB.runs[leavingKey] = nil
+      end
+      activeInstanceRunKey = nil
     end
     lastTrackedInstanceName = nil
+    lastTrackedInstanceInfo = nil
     frame:Hide()
     inTrackedInstance = false
   end
@@ -788,9 +1043,24 @@ eventFrame:RegisterEvent("CHAT_MSG_MONSTER_EMOTE")
 eventFrame:RegisterEvent("CHAT_MSG_RAID_BOSS_EMOTE")
 eventFrame:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
 eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+eventFrame:RegisterEvent("GOSSIP_SHOW")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
   if event == "PLAYER_ENTERING_WORLD" then
     DeferUpdateVisibility()
+  elseif event == "GOSSIP_SHOW" then
+    if type(GetNumGossipOptions) == "function" and type(GetGossipOptions) == "function" then
+      wipe(lastGossipOptionTitles)
+      local n = GetNumGossipOptions()
+      if n and n >= 1 then
+        local t = { GetGossipOptions() }
+        for slot = 1, n do
+          local title = t[(slot - 1) * 2 + 1]
+          if type(title) == "string" then
+            lastGossipOptionTitles[slot] = title
+          end
+        end
+      end
+    end
   elseif event == "ZONE_CHANGED_NEW_AREA" then
     UpdateVisibility()
   elseif event == "ZONE_CHANGED" then
@@ -816,5 +1086,116 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     OnCombatLogEvent(...)
   end
 end)
+
+-- Violet Hold: ChromieCraft-style NPC menu "Select {boss}" → narrow UI to two picks + Cyanigosa.
+if type(hooksecurefunc) == "function" and type(SelectGossipOption) == "function" then
+  hooksecurefunc("SelectGossipOption", function(index)
+    if type(index) ~= "number" then
+      return
+    end
+    local instName = select(1, GetInstanceInfo())
+    if not IsVioletHoldInstanceName(instName) or not IsDungeonOrRaid() then
+      return
+    end
+    local title = lastGossipOptionTitles[index]
+    if type(title) ~= "string" then
+      return
+    end
+    local rest = trimStr(title):match("^Select%s+(.+)$")
+    if not rest then
+      return
+    end
+    local resolved = ResolveVioletHoldGossipBossName(rest)
+    if not resolved then
+      return
+    end
+    for _, p in ipairs(vhGossipPicks) do
+      if p == resolved then
+        return
+      end
+    end
+    if #vhGossipPicks >= 2 then
+      return
+    end
+    table.insert(vhGossipPicks, resolved)
+    if #vhGossipPicks == 2 then
+      RefreshBossList()
+    end
+  end)
+end
+
+-- ResetInstances() clears instance ids for zones you're not in; if you're inside an instance, the current id is kept.
+-- Wipe SV rows for reset ids only: full wipe when outside; when inside, keep the row for GetInstanceRunKey().
+local function WipeRunsAfterBlizzardResetInstances()
+  EnsureDB()
+  local keepKey = nil
+  if IsDungeonOrRaid() then
+    keepKey = GetInstanceRunKey()
+  end
+  if keepKey == nil then
+    wipe(BossTrackerDB.runs)
+  else
+    local saved = BossTrackerDB.runs[keepKey]
+    wipe(BossTrackerDB.runs)
+    if type(saved) == "table" then
+      BossTrackerDB.runs[keepKey] = saved
+    end
+  end
+  if IsDungeonOrRaid() then
+    ApplyInstanceRunState()
+    RefreshBossList()
+  end
+end
+
+if type(hooksecurefunc) == "function" and type(ResetInstances) == "function" then
+  hooksecurefunc("ResetInstances", WipeRunsAfterBlizzardResetInstances)
+end
+
+-- Debug: /btdump — print GetInstanceInfo (no DevTools required) + run DB snapshot.
+SLASH_BTDUMP1 = "/btdump"
+SlashCmdList["BTDUMP"] = function()
+  print("|cff00ff00BossTracker|r debug — GetInstanceInfo() (slots 1–12):")
+  for i = 1, 12 do
+    local v = select(i, GetInstanceInfo())
+    print(string.format("  [%d] = %s  (%s)", i, tostring(v), type(v)))
+  end
+  local inI, iType = IsInInstance()
+  print("  IsInInstance: " .. tostring(inI) .. "  instanceType: " .. tostring(iType))
+  local okMap, mapTry = pcall(function()
+    return type(GetCurrentMapAreaID) == "function" and GetCurrentMapAreaID() or "no API"
+  end)
+  print("  GetCurrentMapAreaID (optional, pcall): " .. tostring(okMap) .. " / " .. tostring(mapTry))
+  print("  GetServerTimeSeconds: " .. tostring(GetServerTimeSeconds()) .. "  (raw GetServerTime: " .. tostring(type(_G.GetServerTime) == "function" and _G.GetServerTime() or "nil") .. ")")
+  print("  GetInstanceRunKey() (SV row key): " .. tostring(GetInstanceRunKey()))
+  print("  activeInstanceRunKey: " .. tostring(activeInstanceRunKey))
+  EnsureDB()
+  local k = GetInstanceRunKey()
+  local rec = BossTrackerDB.runs[k]
+  if rec then
+    local nDef = rec.defeatedBoss and #rec.defeatedBoss or 0
+    print(
+      "  current run row: startServerTime="
+        .. tostring(rec.startServerTime)
+        .. " defeatedBossCount="
+        .. tostring(nDef)
+        .. " completedElapsed="
+        .. tostring(rec.completedElapsed)
+    )
+  else
+    print("  current run row: (none yet for this key — created on next ApplyInstanceRunState)")
+  end
+  local rowCount = 0
+  for _ in pairs(BossTrackerDB.runs) do
+    rowCount = rowCount + 1
+  end
+  print("  BossTrackerDB.runs total rows: " .. tostring(rowCount))
+  if type(BossTracker_InstanceRuns) == "table" then
+    local n = 0
+    for _ in pairs(BossTracker_InstanceRuns) do
+      n = n + 1
+    end
+    print("  BossTracker_InstanceRuns rows (legacy SV, if any): " .. tostring(n))
+  end
+end
 
 UpdateVisibility()

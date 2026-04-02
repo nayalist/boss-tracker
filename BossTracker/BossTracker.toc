@@ -1,8 +1,9 @@
 ## Interface: 30300
 ## Title: BossTracker
 ## Notes: Tracks dungeon and raid boss progress.
-## Version: 0.1
+## Version: 1.12
 ## Author: BossTracker
+## SavedVariablesPerCharacter: BossTrackerDB
 
 BossData.lua
 Core.lua
