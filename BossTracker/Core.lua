@@ -38,6 +38,20 @@ pinBtn:SetWidth(70)
 pinBtn:SetHeight(22)
 pinBtn:SetPoint("RIGHT", titleBar, "RIGHT", 0, 0)
 
+local resizeHandle = CreateFrame("Frame", nil, frame)
+resizeHandle:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+resizeHandle:SetWidth(20)
+resizeHandle:SetHeight(20)
+resizeHandle:EnableMouse(true)
+
+local resizeLine = resizeHandle:CreateTexture(nil, "OVERLAY")
+resizeLine:SetTexture("Interface\\Tooltips\\UI-Tooltip-Border")
+resizeLine:SetWidth(10)
+resizeLine:SetHeight(10)
+resizeLine:SetPoint("BOTTOMRIGHT", resizeHandle, "BOTTOMRIGHT", -5, 5)
+local x = 0.1 * 10 / 17
+resizeLine:SetTexCoord(0.05 - x, 0.5, 0.05, 0.5 + x, 0.05, 0.5 - x, 0.5 + x, 0.5)
+
 local timerText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 timerText:SetPoint("RIGHT", pinBtn, "LEFT", -8, 0)
 timerText:SetText("00:00")
@@ -71,6 +85,7 @@ local multikillDead = {}
 local phaseKillCounts = {}
 -- Instance run timer (must be declared before MarkBossDefeated so the closure sees this local, not a nil global)
 local timerStart = nil
+local timerPausedAt = nil
 -- Scarlet Monastery only: last wing we resolved from subzone; kept through generic hallways until leaving instance.
 local smPinnedWingIndex = nil
 -- Dire Maul only: last wing we resolved from subzone; kept through generic hallways until leaving instance.
@@ -294,10 +309,28 @@ local function MarkBossDefeated(displayName)
   end
   defeatedNames[displayName] = true
   local elapsed = 0
-  if timerStart then
+  if timerPausedAt then
+    elapsed = timerPausedAt
+  elseif timerStart then
     elapsed = GetTime() - timerStart
   end
   defeatElapsedAt[displayName] = elapsed
+
+  local instanceName = select(1, GetInstanceInfo())
+  local list = GetActiveBossList(instanceName)
+  if list and #list > 0 then
+    local remaining = 0
+    for _, raw in ipairs(list) do
+      local e = NormalizeBossEntry(raw)
+      if not defeatedNames[e.name] then
+        remaining = remaining + 1
+      end
+    end
+    if remaining == 0 and timerStart and not timerPausedAt then
+      timerPausedAt = elapsed
+      frame:SetScript("OnUpdate", nil)
+    end
+  end
 end
 
 -- DBM uses killMsgs[msg] == true on the raw yell (RegisterKill("yell", L.YellCombatEnd)); strip |c/|r so we still match.
@@ -451,15 +484,19 @@ local function TryMarkNpcKill(npcId)
   end
 end
 
--- WotLK: hideCaster + 11 prefix args, then spellId at index 12 for SPELL_* events.
 local function GetSpellIdFromCombatLog(...)
-  local s12 = select(12, ...)
-  if type(s12) == "number" then
-    return s12
-  end
-  local s11 = select(11, ...)
-  if type(s11) == "number" then
-    return s11
+  -- Different cores/builds can shift SPELL_* payload indices; probe likely slots.
+  for i = 9, 14 do
+    local v = select(i, ...)
+    if type(v) == "number" then
+      return v
+    end
+    if type(v) == "string" then
+      local n = tonumber(v)
+      if n then
+        return n
+      end
+    end
   end
   return nil
 end
@@ -572,18 +609,47 @@ local locked = false
 
 local function UpdatePinButton()
   if locked then
-    pinBtn:SetText("Unpin")
+    pinBtn:SetText("Unlock")
   else
-    pinBtn:SetText("Pin")
+    pinBtn:SetText("Lock")
+  end
+end
+
+local function SetResizeBoundsCompat(target, minW, minH, maxW, maxH)
+  if type(target.SetResizeBounds) == "function" then
+    target:SetResizeBounds(minW, minH, maxW, maxH)
+    return true
+  end
+  if type(target.SetMinResize) == "function" then
+    target:SetMinResize(minW, minH)
+  end
+  if maxW and maxH and type(target.SetMaxResize) == "function" then
+    target:SetMaxResize(maxW, maxH)
+  end
+  return type(target.SetResizable) == "function" and type(target.StartSizing) == "function"
+end
+
+local function UpdateResizeState()
+  local canResize = type(frame.SetResizable) == "function" and type(frame.StartSizing) == "function"
+  if canResize then
+    frame:SetResizable(not locked)
+    SetResizeBoundsCompat(frame, 260, 120)
+  end
+  if not locked and canResize then
+    resizeHandle:Show()
+  else
+    resizeHandle:Hide()
   end
 end
 
 pinBtn:SetScript("OnClick", function()
   locked = not locked
   UpdatePinButton()
+  UpdateResizeState()
 end)
 
 UpdatePinButton()
+UpdateResizeState()
 
 titleBar:EnableMouse(true)
 titleBar:SetScript("OnMouseDown", function(_, button)
@@ -593,6 +659,16 @@ titleBar:SetScript("OnMouseDown", function(_, button)
   frame:StartMoving()
 end)
 titleBar:SetScript("OnMouseUp", function()
+  frame:StopMovingOrSizing()
+end)
+
+resizeHandle:SetScript("OnMouseDown", function(_, button)
+  if locked or button ~= "LeftButton" then
+    return
+  end
+  frame:StartSizing("BOTTOMRIGHT")
+end)
+resizeHandle:SetScript("OnMouseUp", function()
   frame:StopMovingOrSizing()
 end)
 
@@ -611,7 +687,11 @@ local function UpdateTimerDisplay()
     timerText:SetText("00:00")
     return
   end
-  timerText:SetText(FormatElapsed(GetTime() - timerStart))
+  if timerPausedAt then
+    timerText:SetText(FormatElapsed(timerPausedAt))
+  else
+    timerText:SetText(FormatElapsed(GetTime() - timerStart))
+  end
 end
 
 local function StartTimerTick()
@@ -663,11 +743,13 @@ local function UpdateVisibility()
     if inTrackedInstance and lastTrackedInstanceName and lastTrackedInstanceName ~= instName then
       ClearDetectionState()
       timerStart = GetTime()
+      timerPausedAt = nil
       UpdateTimerDisplay()
     end
     if not inTrackedInstance then
       ClearDetectionState()
       timerStart = GetTime()
+      timerPausedAt = nil
       StartTimerTick()
       UpdateTimerDisplay()
     end
@@ -678,6 +760,7 @@ local function UpdateVisibility()
   else
     if inTrackedInstance then
       timerStart = nil
+      timerPausedAt = nil
       StopTimerTick()
       timerText:SetText("00:00")
       ClearDetectionState()

@@ -72,7 +72,7 @@ BossTracker_BossData = {
   ["Icecrown Citadel"] = {
     { name = "Lord Marrowgar", id = 36612 },
     { name = "Lady Deathwhisper", id = 36855 },
-    { name = "Gunship Battle", ids = { 36939, 36948 }, any = true },
+    { name = "Gunship Battle", completeOnYell = { "Don't say I didn't warn ya, scoundrels! Onward, brothers and sisters!", "The Alliance falter. Onward to the Lich King!"} },
     { name = "Deathbringer Saurfang", id = 37813 },
     { name = "Festergut", id = 36626 },
     { name = "Rotface", id = 36627 },
@@ -322,7 +322,7 @@ BossTracker_BossData = {
   ["Magtheridon's Lair"] = {
     { name = "Magtheridon", id = 17257 },
   },
-  ["Serpentshrine Cavern"] = {
+  ["Coilfang: Serpentshrine Cavern"] = {
     { name = "Hydross the Unstable", id = 21216 },
     { name = "The Lurker Below", id = 21217 },
     { name = "Leotheras the Blind", id = 21215 },
@@ -336,7 +336,7 @@ BossTracker_BossData = {
     { name = "High Astromancer Solarian", id = 18805 },
     { name = "Kael'thas Sunstrider", id = 19622 },
   },
-  ["Hyjal Summit"] = {
+  ["The Battle for Mount Hyjal"] = {
     { name = "Rage Winterchill", id = 17767 },
     { name = "Anetheron", id = 17808 },
     { name = "Kaz'rogal", id = 17888 },
@@ -383,7 +383,7 @@ BossTracker_BossData = {
     { name = "Shazzrah", id = 12264 },
     { name = "Sulfuron Harbinger", id = 12098 },
     { name = "Golemagg the Incinerator", id = 11988 },
-    { name = "Majordomo Executus", completeOnYell = { "Brashly, you have cometo wrest the secrets of the Living Flame! You will soon regret the recklessness of your quest." }},
+    { name = "Majordomo Executus", completeOnYell = { "Brashly, you have come to wrest the secrets of the Living Flame! You will soon regret the recklessness of your quest." }},
     { name = "Ragnaros", id = 11502 },
   },
   ["Blackwing Lair"] = {
@@ -415,16 +415,18 @@ BossTracker_BossData = {
     { name = "Ayamiss the Hunter", id = 15369 },
     { name = "Ossirian the Unscarred", id = 15339 },
   },
-  ["Temple of Ahn'Qiraj"] = {
+  ["Ahn'Qiraj Temple"] = {
     { name = "The Prophet Skeram", id = 15263 },
+    { name = "Bug Trio", ids = { 15543, 15544, 15511 }, all = true },
     { name = "Battleguard Sartura", id = 15516 },
     { name = "Fankriss the Unyielding", id = 15510 },
+    { name = "Viscidus", id = 15299 },
     { name = "Princess Huhuran", id = 15509 },
     { name = "Twin Emperors", ids = { 15275, 15276 }, all = true },
     { name = "Ouro", id = 15517 },
     { name = "C'Thun", id = 15727 },
-    { name = "Bug Trio", ids = { 15543, 15544, 15511 }, all = true },
-    { name = "Viscidus", id = 15299 },
+    
+    
   },
 
   ---------------------------------------------------------------------------
