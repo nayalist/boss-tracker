@@ -612,30 +612,26 @@ BossTracker_BossData = {
 }
 
 -- Scarlet Monastery: one instance name for all wings (Graveyard / Library / Armory / Cathedral).
--- Core.lua picks bosses by GetSubZoneText() matching one of `match` (Koality-of-Life style).
+-- Core.lua resolves wing only via GetCurrentMapDungeonLevel() (1–4 = this table order, WotLK).
 BossTracker_ScarletMonasteryWings = {
   {
-    match = { "Graveyard", "Chamber of Atonement", "Forlorn Cloister", "Honor's Tomb" },
     bosses = {
       { name = "Interrogator Vishas", id = 3983 },
       { name = "Bloodmage Thalnos", id = 4543 },
     },
   },
   {
-    match = { "Library", "Huntsman's Cloister", "Gallery of Treasures", "Athenaeum" },
     bosses = {
       { name = "Houndmaster Loksey", id = 3974 },
       { name = "Arcanist Doan", id = 6487 },
     },
   },
   {
-    match = { "Training Grounds", "Footman's Armory", "Crusader's Armory", "Hall of Champions" },
     bosses = {
       { name = "Herod", id = 3975 },
     },
   },
   {
-    match = { "Cathedral", "Chapel Gardens", "Crusader's Chapel" },
     bosses = {
       { name = "High Inquisitor Fairbanks", id = 4542 },
       { name = "Scarlet Commander Mograine", id = 3976 },
@@ -644,32 +640,9 @@ BossTracker_ScarletMonasteryWings = {
   },
 }
 
-BossTracker_ScarletMonasteryMerged = {}
-do
-  local t = BossTracker_ScarletMonasteryMerged
-  for _, wing in ipairs(BossTracker_ScarletMonasteryWings) do
-    for _, b in ipairs(wing.bosses) do
-      table.insert(t, b)
-    end
-  end
-end
-
--- Dire Maul: one instance name for three wings (East / North / West).
--- Core.lua picks bosses by GetSubZoneText() matching one of `match`.
+-- Dire Maul: one instance name for three wings. Table order: North, West, East (WotLK map floors 1, 2, 5).
 BossTracker_DireMaulWings = {
   {
-    -- East
-    match = { "Warpwood Quarter" },
-    bosses = {
-      { name = "Zevrim Thornhoof", id = 11490 },
-      { name = "Hydrospawn", id = 13280 },
-      { name = "Lethtendris", id = 14327 },
-      { name = "Alzzin the Wildshaper", id = 11492 },
-    },
-  },
-  {
-    -- North
-    match = { "Halls of Destruction" },
     bosses = {
       { name = "Guard Mol'dar", id = 14326 },
       { name = "Stomper Kreeg", id = 14322 },
@@ -680,8 +653,6 @@ BossTracker_DireMaulWings = {
     },
   },
   {
-    -- West
-    match = { "Capital Gardens" },
     bosses = {
       { name = "Tendris Warpwood", id = 11489 },
       { name = "Magister Kalendris", id = 11487 },
@@ -690,17 +661,22 @@ BossTracker_DireMaulWings = {
       { name = "Prince Tortheldrin", id = 11486 },
     },
   },
+  {
+    bosses = {
+      { name = "Zevrim Thornhoof", id = 11490 },
+      { name = "Hydrospawn", id = 13280 },
+      { name = "Lethtendris", id = 14327 },
+      { name = "Alzzin the Wildshaper", id = 11492 },
+    },
+  },
 }
 
-BossTracker_DireMaulMerged = {}
-do
-  local t = BossTracker_DireMaulMerged
-  for _, wing in ipairs(BossTracker_DireMaulWings) do
-    for _, b in ipairs(wing.bosses) do
-      table.insert(t, b)
-    end
-  end
-end
+-- GetCurrentMapDungeonLevel() -> index into BossTracker_DireMaulWings (non-contiguous floors on one area id).
+BossTracker_DireMaulDungeonLevelToWingIndex = {
+  [1] = 1,
+  [2] = 2,
+  [5] = 3,
+}
 
 -- GetInstanceInfo() name for Violet Hold is inconsistent: some clients return "Violet Hold"
 -- without "The", which would leave the boss list empty (no matching key above).

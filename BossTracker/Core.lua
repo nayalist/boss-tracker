@@ -1,5 +1,5 @@
 --[[
-  BossTracker — main window (3.3.5a) — v1.12
+  BossTracker — main window (3.3.5a) — v1.2
   Boss kill detection: NPC id from UNIT_DIED destGUID (Koality-of-Life style).
   Trial of the Champion: optional completeOnYell matches DBM RegisterKill("yell", L.YellCombatEnd) — full-line equality on CHAT_MSG_MONSTER_YELL (see DBM-Dungeons DBM-Party-WotLK localization + onMonsterMessage killMsgs[msg]).
   See BossData.lua for per-boss id / ids / completeOnSpellId / completeOnYell.
@@ -86,10 +86,6 @@ local phaseKillCounts = {}
 -- Instance run timer (must be declared before MarkBossDefeated so the closure sees this local, not a nil global)
 local timerStart = nil
 local timerPausedAt = nil
--- Scarlet Monastery only: last wing we resolved from subzone; kept through generic hallways until leaving instance.
-local smPinnedWingIndex = nil
--- Dire Maul only: last wing we resolved from subzone; kept through generic hallways until leaving instance.
-local dmPinnedWingIndex = nil
 -- Character DB: current run key (GetInstanceInfo()[8] or synthetic); nil outside an instance.
 local activeInstanceRunKey = nil
 -- Violet Hold (e.g. ChromieCraft): two "Select {boss}" gossip picks → show only those + Cyanigosa.
@@ -103,6 +99,13 @@ local function NormalizeBossEntry(entry)
     return { name = entry, id = nil, ids = nil }
   end
   return entry
+end
+
+local function trimStr(s)
+  if type(s) ~= "string" then
+    return ""
+  end
+  return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
 -- WotLK 3.3.5 creature GUID -> NPC id (same layout as Koality-of-Life)
@@ -136,8 +139,6 @@ end
 
 local function ClearDetectionState()
   npcLookupInstance = nil
-  smPinnedWingIndex = nil
-  dmPinnedWingIndex = nil
   wipe(npcLookup)
   wipe(defeatedNames)
   wipe(defeatElapsedAt)
@@ -254,55 +255,37 @@ local function GetScarletMonasteryWingIndex()
   if not wings then
     return nil
   end
-  local sub = GetSubZoneText()
-  if not sub or sub == "" then
+  if type(GetCurrentMapDungeonLevel) ~= "function" then
     return nil
   end
-  for i, wing in ipairs(wings) do
-    for _, m in ipairs(wing.match) do
-      if m == sub then
-        return i
-      end
-    end
+  local ok, lv = pcall(GetCurrentMapDungeonLevel)
+  if not ok or type(lv) ~= "number" then
+    return nil
+  end
+  if lv >= 1 and lv <= #wings then
+    return lv
   end
   return nil
-end
-
--- When subzone matches a wing, pin that wing. When it is generic (e.g. "Scarlet Monastery" in hallways), keep the pin
--- so the list does not jump back to all seven bosses. Pin clears in ClearDetectionState (leave instance).
-local function GetEffectiveScarletWingIndex()
-  local idx = GetScarletMonasteryWingIndex()
-  if idx then
-    smPinnedWingIndex = idx
-  end
-  return smPinnedWingIndex
 end
 
 local function GetDireMaulWingIndex()
   local wings = BossTracker_DireMaulWings
-  if not wings then
+  local map = BossTracker_DireMaulDungeonLevelToWingIndex
+  if not wings or not map then
     return nil
   end
-  local sub = GetSubZoneText()
-  if not sub or sub == "" then
+  if type(GetCurrentMapDungeonLevel) ~= "function" then
     return nil
   end
-  for i, wing in ipairs(wings) do
-    for _, m in ipairs(wing.match) do
-      if m == sub then
-        return i
-      end
-    end
+  local ok, lv = pcall(GetCurrentMapDungeonLevel)
+  if not ok or type(lv) ~= "number" then
+    return nil
+  end
+  local idx = map[lv]
+  if type(idx) == "number" and wings[idx] then
+    return idx
   end
   return nil
-end
-
-local function GetEffectiveDireMaulWingIndex()
-  local idx = GetDireMaulWingIndex()
-  if idx then
-    dmPinnedWingIndex = idx
-  end
-  return dmPinnedWingIndex
 end
 
 local function FilterBossListForPlayer(baseList)
@@ -331,13 +314,6 @@ local function FilterBossListForPlayer(baseList)
     end
   end
   return filtered
-end
-
-local function trimStr(s)
-  if type(s) ~= "string" then
-    return ""
-  end
-  return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
 local function IsVioletHoldInstanceName(name)
@@ -413,33 +389,35 @@ local function GetActiveBossList(instanceName)
     return base
   end
   if instanceName == "Scarlet Monastery" then
-    local smEffective = GetEffectiveScarletWingIndex()
-    if smEffective and BossTracker_ScarletMonasteryWings and BossTracker_ScarletMonasteryWings[smEffective] then
-      return FilterBossListForPlayer(BossTracker_ScarletMonasteryWings[smEffective].bosses)
+    local smIdx = GetScarletMonasteryWingIndex()
+    if smIdx and BossTracker_ScarletMonasteryWings and BossTracker_ScarletMonasteryWings[smIdx] then
+      return FilterBossListForPlayer(BossTracker_ScarletMonasteryWings[smIdx].bosses)
     end
-    return FilterBossListForPlayer(BossTracker_ScarletMonasteryMerged)
+    return nil
   end
-  local dmEffective = GetEffectiveDireMaulWingIndex()
-  if dmEffective and BossTracker_DireMaulWings and BossTracker_DireMaulWings[dmEffective] then
-    return FilterBossListForPlayer(BossTracker_DireMaulWings[dmEffective].bosses)
+  if instanceName == "Dire Maul" then
+    local dmIdx = GetDireMaulWingIndex()
+    if dmIdx and BossTracker_DireMaulWings and BossTracker_DireMaulWings[dmIdx] then
+      return FilterBossListForPlayer(BossTracker_DireMaulWings[dmIdx].bosses)
+    end
+    return nil
   end
-  return FilterBossListForPlayer(BossTracker_DireMaulMerged)
 end
 
 local function GetNpcLookupCacheKey(instanceName)
   if instanceName == "Scarlet Monastery" then
-    local effective = GetEffectiveScarletWingIndex()
-    if effective then
-      return instanceName .. "#w" .. tostring(effective)
+    local idx = GetScarletMonasteryWingIndex()
+    if idx then
+      return instanceName .. "#w" .. tostring(idx)
     end
-    return instanceName .. "#merge"
+    return instanceName .. "#pending"
   end
   if instanceName == "Dire Maul" then
-    local effective = GetEffectiveDireMaulWingIndex()
-    if effective then
-      return instanceName .. "#w" .. tostring(effective)
+    local idx = GetDireMaulWingIndex()
+    if idx then
+      return instanceName .. "#w" .. tostring(idx)
     end
-    return instanceName .. "#merge"
+    return instanceName .. "#pending"
   end
   if IsVioletHoldInstanceName(instanceName) and #vhGossipPicks == 2 then
     return instanceName .. "#g:" .. vhGossipPicks[1] .. ":" .. vhGossipPicks[2]
@@ -821,7 +799,7 @@ local function UpdateResizeState()
   local canResize = type(frame.SetResizable) == "function" and type(frame.StartSizing) == "function"
   if canResize then
     frame:SetResizable(not locked)
-    SetResizeBoundsCompat(frame, 260, 120)
+    SetResizeBoundsCompat(frame, 150, 120)
   end
   if not locked and canResize then
     resizeHandle:Show()
@@ -1165,6 +1143,52 @@ SlashCmdList["BTDUMP"] = function()
     return type(GetCurrentMapAreaID) == "function" and GetCurrentMapAreaID() or "no API"
   end)
   print("  GetCurrentMapAreaID (optional, pcall): " .. tostring(okMap) .. " / " .. tostring(mapTry))
+  do
+    local okPos, px, py = pcall(function()
+      if type(GetPlayerMapPosition) ~= "function" then
+        error("GetPlayerMapPosition missing")
+      end
+      return GetPlayerMapPosition("player")
+    end)
+    if okPos then
+      print(
+        string.format(
+          "  GetPlayerMapPosition(\"player\"): x=%.6f  y=%.6f  (normalized 0–1 on current map; use for wing/entrance calibration)",
+          px or -1,
+          py or -1
+        )
+      )
+      if (px or 0) == 0 and (py or 0) == 0 then
+        print("  (hint: if stuck at 0,0 open the continent/world map once so the dungeon floor loads.)")
+      end
+    else
+      print("  GetPlayerMapPosition(\"player\"): error " .. tostring(px))
+    end
+  end
+  do
+    local okLv, lv = pcall(function()
+      return type(GetCurrentMapDungeonLevel) == "function" and GetCurrentMapDungeonLevel() or nil
+    end)
+    if okLv and lv ~= nil then
+      print("  GetCurrentMapDungeonLevel: " .. tostring(lv))
+    end
+  end
+  do
+    local okF, facing = pcall(function()
+      return type(GetPlayerFacing) == "function" and GetPlayerFacing() or nil
+    end)
+    if okF and facing ~= nil then
+      print(string.format("  GetPlayerFacing: %.4f rad (optional)", facing))
+    end
+  end
+  do
+    local zt = type(GetZoneText) == "function" and GetZoneText() or nil
+    local sz = type(GetSubZoneText) == "function" and GetSubZoneText() or nil
+    local mm = type(GetMinimapZoneText) == "function" and GetMinimapZoneText() or nil
+    print("  GetZoneText: " .. tostring(zt))
+    print("  GetSubZoneText: " .. tostring(sz))
+    print("  GetMinimapZoneText: " .. tostring(mm))
+  end
   print("  GetServerTimeSeconds: " .. tostring(GetServerTimeSeconds()) .. "  (raw GetServerTime: " .. tostring(type(_G.GetServerTime) == "function" and _G.GetServerTime() or "nil") .. ")")
   print("  GetInstanceRunKey() (SV row key): " .. tostring(GetInstanceRunKey()))
   print("  activeInstanceRunKey: " .. tostring(activeInstanceRunKey))
