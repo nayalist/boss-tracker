@@ -122,6 +122,9 @@ local vhGossipPicks = {}
 local lastGossipOptionTitles = {}
 -- Last GetInstanceInfo() while inside a tracked instance — used on zone-out (outside, [2]/[3] are wrong).
 local lastTrackedInstanceInfo = nil
+-- GetCurrentMapDungeonLevel() can be unmapped in hallways / mid-combat (Dire Maul especially); reuse last good wing.
+local lastScarletMonasteryWingIndex = nil
+local lastDireMaulWingIndex = nil
 
 local function NormalizeBossEntry(entry)
   if type(entry) == "string" then
@@ -174,6 +177,8 @@ local function ClearDetectionState()
   wipe(multikillDead)
   wipe(phaseKillCounts)
   wipe(vhGossipPicks)
+  lastScarletMonasteryWingIndex = nil
+  lastDireMaulWingIndex = nil
 end
 
 local function EnsureDB()
@@ -285,16 +290,17 @@ local function GetScarletMonasteryWingIndex()
     return nil
   end
   if type(GetCurrentMapDungeonLevel) ~= "function" then
-    return nil
+    return lastScarletMonasteryWingIndex
   end
   local ok, lv = pcall(GetCurrentMapDungeonLevel)
   if not ok or type(lv) ~= "number" then
-    return nil
+    return lastScarletMonasteryWingIndex
   end
   if lv >= 1 and lv <= #wings then
+    lastScarletMonasteryWingIndex = lv
     return lv
   end
-  return nil
+  return lastScarletMonasteryWingIndex
 end
 
 local function GetDireMaulWingIndex()
@@ -304,17 +310,18 @@ local function GetDireMaulWingIndex()
     return nil
   end
   if type(GetCurrentMapDungeonLevel) ~= "function" then
-    return nil
+    return lastDireMaulWingIndex
   end
   local ok, lv = pcall(GetCurrentMapDungeonLevel)
   if not ok or type(lv) ~= "number" then
-    return nil
+    return lastDireMaulWingIndex
   end
   local idx = map[lv]
   if type(idx) == "number" and wings[idx] then
+    lastDireMaulWingIndex = idx
     return idx
   end
-  return nil
+  return lastDireMaulWingIndex
 end
 
 local function FilterBossListForPlayer(baseList)
