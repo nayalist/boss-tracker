@@ -1,8 +1,9 @@
 --[[
-  BossTracker — main window (3.3.5a) — v1.2
+  BossTracker — main window (3.3.5a) — v1.3
   Boss kill detection: NPC id from UNIT_DIED destGUID (Koality-of-Life style).
   Trial of the Champion: optional completeOnYell matches DBM RegisterKill("yell", L.YellCombatEnd) — full-line equality on CHAT_MSG_MONSTER_YELL (see DBM-Dungeons DBM-Party-WotLK localization + onMonsterMessage killMsgs[msg]).
-  See BossData.lua for per-boss id / ids / completeOnSpellId / completeOnYell.
+  See BossData.lua for per-boss id / ids / completeOnSpellId / completeOnYell / search.
+  In instances, left-click a boss name to SendChatMessage(".findnpc <search>", SAY); global 5s cooldown between sends.
 ]]
 
 local frame = CreateFrame("Frame", "BossTrackerMainFrame", UIParent)
@@ -67,8 +68,36 @@ bossArea:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, -GAP_TITLE_TO_BOSS)
 bossArea:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, PAD_Y)
 bossArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, PAD_Y)
 
--- [i] = { name = FontString, time = FontString }
+-- [i] = { name = FontString, time = FontString, hit = Button (name overlay) }
 local bossRows = {}
+
+local lastFindNpcChatTime = 0
+local FINDNPC_CHAT_COOLDOWN_SEC = 5
+
+local function GetBossSearchString(e)
+  if type(e) == "table" and type(e.search) == "string" and e.search ~= "" then
+    return e.search
+  end
+  if type(e) == "table" and type(e.name) == "string" then
+    return e.name
+  end
+  return nil
+end
+
+local function TrySendFindNpcQuery(search)
+  if type(search) ~= "string" or search == "" then
+    return
+  end
+  if not IsInInstance() then
+    return
+  end
+  local now = GetTime()
+  if now - lastFindNpcChatTime < FINDNPC_CHAT_COOLDOWN_SEC then
+    return
+  end
+  lastFindNpcChatTime = now
+  SendChatMessage(".findnpc " .. search, "SAY")
+end
 
 -- [npcId] = { kind = "single"|"multi"|"phaseKill", name = string, allIds = table?, multiKill = number?, all = bool?, any = bool? }
 local npcLookup = {}
@@ -691,6 +720,33 @@ local function ApplyFrameHeight(bossContentHeight)
   frame:SetHeight(TITLE_BAR_TOP_INSET + TITLE_H + GAP_TITLE_TO_BOSS + bossContentHeight + PAD_Y)
 end
 
+-- Height follows boss list; only width is user-resizable (see StartSizing("RIGHT") + resize bounds).
+local function SyncFrameHeightToBossList()
+  local instanceName = select(1, GetInstanceInfo())
+  local list = GetActiveBossList(instanceName) or {}
+  local targetH = TITLE_BAR_TOP_INSET + TITLE_H + GAP_TITLE_TO_BOSS + #list * LINE_STEP + PAD_Y
+  if math.abs((frame:GetHeight() or 0) - targetH) > 0.5 then
+    ApplyFrameHeight(#list * LINE_STEP)
+  end
+end
+
+local function UpdateResizeBounds()
+  local instanceName = select(1, GetInstanceInfo())
+  local list = GetActiveBossList(instanceName) or {}
+  local h = TITLE_BAR_TOP_INSET + TITLE_H + GAP_TITLE_TO_BOSS + #list * LINE_STEP + PAD_Y
+  if type(frame.SetResizeBounds) == "function" then
+    frame:SetResizeBounds(150, h, nil, h)
+    return
+  end
+  if type(frame.SetMinResize) == "function" then
+    frame:SetMinResize(150, h)
+  end
+  if type(frame.SetMaxResize) == "function" then
+    local maxW = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 2000
+    frame:SetMaxResize(maxW, h)
+  end
+end
+
 -- Defeated rows first, ascending by kill time; then undefeated in original BossData order.
 local function BuildDisplayOrder(list)
   local n = #list
@@ -733,6 +789,9 @@ local function RefreshBossList()
   for i = n + 1, #bossRows do
     bossRows[i].name:Hide()
     bossRows[i].time:Hide()
+    if bossRows[i].hit then
+      bossRows[i].hit:Hide()
+    end
   end
 
   for slot = 1, n do
@@ -743,18 +802,30 @@ local function RefreshBossList()
       row.name:SetJustifyH("LEFT")
       row.time = bossArea:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
       row.time:SetJustifyH("RIGHT")
+      row.hit = CreateFrame("Button", nil, bossArea)
+      row.hit:SetFrameStrata("HIGH")
+      row.hit:EnableMouse(true)
+      row.hit:RegisterForClicks("LeftButtonUp")
+      row.hit:SetScript("OnClick", function(self)
+        TrySendFindNpcQuery(self.findNpcSearch)
+      end)
       bossRows[slot] = row
     end
     local dataIndex = displayOrder[slot]
     local e = NormalizeBossEntry(list[dataIndex])
     local bossName = e.name
+    row.hit.findNpcSearch = GetBossSearchString(e)
     row.name:SetText(bossName)
     local yFromTop = (slot - 1) * LINE_STEP
     row.time:ClearAllPoints()
     row.name:ClearAllPoints()
+    row.hit:ClearAllPoints()
     row.time:SetPoint("TOPRIGHT", bossArea, "TOPRIGHT", -4, -yFromTop)
     row.name:SetPoint("TOPLEFT", bossArea, "TOPLEFT", 4, -yFromTop)
     row.name:SetPoint("TOPRIGHT", row.time, "TOPLEFT", -8, 0)
+    row.hit:SetHeight(LINE_STEP)
+    row.hit:SetPoint("TOPLEFT", bossArea, "TOPLEFT", 4, -yFromTop)
+    row.hit:SetPoint("TOPRIGHT", row.time, "TOPLEFT", -8, 0)
     if defeatedNames[bossName] then
       row.name:SetTextColor(1, 0.2, 0.2)
       row.time:SetTextColor(1, 0.2, 0.2)
@@ -766,9 +837,11 @@ local function RefreshBossList()
     end
     row.name:Show()
     row.time:Show()
+    row.hit:Show()
   end
 
   ApplyFrameHeight(n * LINE_STEP)
+  UpdateResizeBounds()
 end
 
 local locked = false
@@ -781,25 +854,11 @@ local function UpdatePinButton()
   end
 end
 
-local function SetResizeBoundsCompat(target, minW, minH, maxW, maxH)
-  if type(target.SetResizeBounds) == "function" then
-    target:SetResizeBounds(minW, minH, maxW, maxH)
-    return true
-  end
-  if type(target.SetMinResize) == "function" then
-    target:SetMinResize(minW, minH)
-  end
-  if maxW and maxH and type(target.SetMaxResize) == "function" then
-    target:SetMaxResize(maxW, maxH)
-  end
-  return type(target.SetResizable) == "function" and type(target.StartSizing) == "function"
-end
-
 local function UpdateResizeState()
   local canResize = type(frame.SetResizable) == "function" and type(frame.StartSizing) == "function"
   if canResize then
     frame:SetResizable(not locked)
-    SetResizeBoundsCompat(frame, 150, 120)
+    UpdateResizeBounds()
   end
   if not locked and canResize then
     resizeHandle:Show()
@@ -832,10 +891,14 @@ resizeHandle:SetScript("OnMouseDown", function(_, button)
   if locked or button ~= "LeftButton" then
     return
   end
-  frame:StartSizing("BOTTOMRIGHT")
+  frame:StartSizing("RIGHT")
 end)
 resizeHandle:SetScript("OnMouseUp", function()
   frame:StopMovingOrSizing()
+end)
+
+frame:SetScript("OnSizeChanged", function()
+  SyncFrameHeightToBossList()
 end)
 
 local function IsDungeonOrRaid()
