@@ -560,7 +560,8 @@ BossTracker_BossData = {
     { name = "Timmy the Cruel", id = 10808 , search = "Timmy the Cruel"},
     { name = "Cannon Master Willey", id = 10997 , search = "Cannon Master Willey"},
     { name = "Archivist Galford", id = 10811 , search = "Archivist Galford"},
-    { name = "Balnazzar", id = 10813 , search = "Balnazzar"},
+    -- DBM-Party-Classic Balnazzar: SetCreatureID(10812, 10813); 10812 Dathrohan, 10813 Balnazzar (DBM ends on 10813 UNIT_DIED).
+    { name = "Balnazzar", ids = { 10812, 10813 }, any = true, search = "Balnazzar"},
     { name = "Baroness Anastari", id = 10436 , search = "Baroness Anastari"},
     { name = "Nerub'enkan", id = 10437 , search = "Nerub'enkan"},
     { name = "Maleki the Pallid", id = 10438 , search = "Maleki the Pallid"},
