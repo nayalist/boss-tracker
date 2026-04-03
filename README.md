@@ -4,3 +4,6 @@ Lightweight addon for WoW WotLK 3.3.5a AzerothCore client for Synastria that tra
 
 
 Unable to find a boss? Click their name in the ui to trigger the search function, spotlights the boss and places a map marker on them!
+
+
+known bug: if boss list progress carrries over after server dungeon resets, just leave dungeon and run "/script ResetInstances();" and it should reset the local instance db
