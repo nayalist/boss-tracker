@@ -241,6 +241,28 @@ local function ShouldDeleteSyntheticRunOnZoneOut(meta)
   return d == 1
 end
 
+-- Stored on each BossTrackerDB.runs[key] row (set whenever ApplyInstanceRunState runs in an instance).
+-- instanceType / difficulty / instanceId mirror GetInstanceInfo() [2] / [3] / [8].
+-- difficulty: WotLK 5-player 1 = normal, 2 = heroic; raids use Blizzard's raid difficulty index (e.g. 10/25/heroic tiers).
+local function ApplyInstanceRunMeta(rec)
+  if type(rec) ~= "table" then
+    return
+  end
+  local name, instanceType, difficulty, _, _, _, _, instanceId = GetInstanceInfo()
+  if type(name) == "string" and name ~= "" then
+    rec.instanceName = name
+  end
+  if type(instanceType) == "string" then
+    rec.instanceType = instanceType
+  end
+  if type(difficulty) == "number" then
+    rec.difficulty = difficulty
+  end
+  if type(instanceId) == "number" and instanceId > 0 then
+    rec.instanceId = instanceId
+  end
+end
+
 local function DefeatedBossEntryName(entry)
   if type(entry) == "string" then
     return entry
@@ -916,6 +938,71 @@ local function IsDungeonOrRaid()
   return instanceType == "party" or instanceType == "raid"
 end
 
+-- Daily heroic dungeon SV prune: keep rows with startServerTime >= most recent 04:00 on the Unix clock
+-- used by GetServerTime() (typically UTC). If your realm resets at a different wall-clock hour, change
+-- HEROIC_DAILY_RESET_HOUR_UTC (0–23) to match that instant in the same time basis as GetServerTime().
+local HEROIC_DAILY_RESET_HOUR_UTC = 4
+local HEROIC_PRUNE_INTERVAL_SEC = 60
+
+local function GetHeroicDailyCutoffUnix()
+  local now = GetServerTimeSeconds()
+  local resetSec = HEROIC_DAILY_RESET_HOUR_UTC * 3600
+  local day = 86400
+  local midnight = now - (now % day)
+  local todayReset = midnight + resetSec
+  if now >= todayReset then
+    return todayReset
+  end
+  return todayReset - day
+end
+
+local function IsTrackedHeroicDungeonRun(key, rec)
+  if type(rec) ~= "table" then
+    return false
+  end
+  if rec.instanceType == "party" and type(rec.difficulty) == "number" and rec.difficulty == 2 then
+    return true
+  end
+  -- Legacy rows: only synthetic keys embed difficulty when [8] was missing.
+  if not IsSyntheticInstanceRunKey(key) then
+    return false
+  end
+  if rec.instanceType ~= nil or rec.difficulty ~= nil then
+    return false
+  end
+  return key:sub(-2) == ":2"
+end
+
+local function PruneStaleHeroicDungeonRuns()
+  EnsureDB()
+  local cutoff = GetHeroicDailyCutoffUnix()
+  local runs = BossTrackerDB.runs
+  local protectKey = nil
+  if IsDungeonOrRaid() and activeInstanceRunKey then
+    protectKey = activeInstanceRunKey
+  end
+  for key, rec in pairs(runs) do
+    if IsTrackedHeroicDungeonRun(key, rec) then
+      local st = rec.startServerTime
+      if type(st) ~= "number" or st < cutoff then
+        if key ~= protectKey then
+          runs[key] = nil
+        end
+      end
+    end
+  end
+end
+
+local heroicPruneTickerFrame = CreateFrame("Frame")
+local heroicPruneAccum = 0
+heroicPruneTickerFrame:SetScript("OnUpdate", function(_, elapsed)
+  heroicPruneAccum = heroicPruneAccum + elapsed
+  if heroicPruneAccum >= HEROIC_PRUNE_INTERVAL_SEC then
+    heroicPruneAccum = 0
+    PruneStaleHeroicDungeonRuns()
+  end
+end)
+
 local inTrackedInstance = false
 
 local function UpdateTimerDisplay()
@@ -995,6 +1082,7 @@ local function ApplyInstanceRunState()
       end
     end
   end
+  ApplyInstanceRunMeta(rec)
   UpdateTimerDisplay()
   if rec.completedElapsed then
     StopTimerTick()
@@ -1079,6 +1167,7 @@ local function DeferUpdateVisibility()
   deferFrame:SetScript("OnUpdate", function(self)
     self:SetScript("OnUpdate", nil)
     UpdateVisibility()
+    PruneStaleHeroicDungeonRuns()
   end)
 end
 
@@ -1260,6 +1349,13 @@ SlashCmdList["BTDUMP"] = function()
     print("  GetMinimapZoneText: " .. tostring(mm))
   end
   print("  GetServerTimeSeconds: " .. tostring(GetServerTimeSeconds()) .. "  (raw GetServerTime: " .. tostring(type(_G.GetServerTime) == "function" and _G.GetServerTime() or "nil") .. ")")
+  print(
+    "  heroic prune: cutoff Unix="
+      .. tostring(GetHeroicDailyCutoffUnix())
+      .. "  (HEROIC_DAILY_RESET_HOUR_UTC="
+      .. tostring(HEROIC_DAILY_RESET_HOUR_UTC)
+      .. ")"
+  )
   print("  GetInstanceRunKey() (SV row key): " .. tostring(GetInstanceRunKey()))
   print("  activeInstanceRunKey: " .. tostring(activeInstanceRunKey))
   EnsureDB()
@@ -1274,6 +1370,14 @@ SlashCmdList["BTDUMP"] = function()
         .. tostring(nDef)
         .. " completedElapsed="
         .. tostring(rec.completedElapsed)
+        .. " instanceName="
+        .. tostring(rec.instanceName)
+        .. " instanceType="
+        .. tostring(rec.instanceType)
+        .. " difficulty="
+        .. tostring(rec.difficulty)
+        .. " instanceId="
+        .. tostring(rec.instanceId)
     )
   else
     print("  current run row: (none yet for this key — created on next ApplyInstanceRunState)")
