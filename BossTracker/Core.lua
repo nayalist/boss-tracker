@@ -7,10 +7,7 @@
 ]]
 
 local frame = CreateFrame("Frame", "BossTrackerMainFrame", UIParent)
-<<<<<<< Updated upstream
-=======
 -- Lowest strata so default panels (character, bags, etc.) stack above and receive clicks first.
->>>>>>> Stashed changes
 frame:SetFrameStrata("BACKGROUND")
 frame:SetFrameLevel(1)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
