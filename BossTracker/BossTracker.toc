@@ -3,7 +3,8 @@
 ## Notes: Tracks dungeon and raid boss progress.
 ## Version: 1.3
 ## Author: BossTracker
-## SavedVariablesPerCharacter: BossTrackerDB
+## SavedVariablesPerCharacter: BossTrackerDB, LockoutTrackerDB
 
 BossData.lua
+LockoutTracker.lua
 Core.lua
