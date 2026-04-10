@@ -7,8 +7,8 @@
 ]]
 
 local frame = CreateFrame("Frame", "BossTrackerMainFrame", UIParent)
-frame:SetFrameStrata("MEDIUM")
-frame:SetFrameLevel(20)
+frame:SetFrameStrata("BACKGROUND")
+frame:SetFrameLevel(1)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetWidth(320)
 frame:SetMovable(true)
@@ -832,7 +832,6 @@ local function RefreshBossList()
       row.time = bossArea:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
       row.time:SetJustifyH("RIGHT")
       row.hit = CreateFrame("Button", nil, bossArea)
-      row.hit:SetFrameStrata("HIGH")
       row.hit:EnableMouse(true)
       row.hit:RegisterForClicks("LeftButtonUp")
       row.hit:SetScript("OnClick", function(self)
