@@ -1,6 +1,7 @@
 Lightweight addon for WoW WotLK 3.3.5a AzerothCore client for Synastria that tracks defeated bosses in current instance (dungeon/raid) and timestamps for each kill.
 
-<img width="302" height="348" alt="image" src="https://github.com/user-attachments/assets/1504663b-b429-474a-b7d4-b570a47eaf08" /> <img width="161" height="115" alt="image" src="https://github.com/user-attachments/assets/9be6c229-8231-4e60-b8f2-a8e2065dea21" />
+<img width="302" height="348" alt="image" src="https://github.com/user-attachments/assets/1504663b-b429-474a-b7d4-b570a47eaf08" /> <img width="159" height="117" alt="image" src="https://github.com/user-attachments/assets/f4de08aa-26fb-4518-a4d8-a0f6f407145e" />
+
 
 
 
