@@ -7,6 +7,7 @@
 ]]
 
 local frame = CreateFrame("Frame", "BossTrackerMainFrame", UIParent)
+-- Lowest strata so default panels (character, bags, etc.) stack above and receive clicks first.
 frame:SetFrameStrata("BACKGROUND")
 frame:SetFrameLevel(1)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -187,6 +188,12 @@ local function EnsureDB()
   end
   if type(BossTrackerDB.runs) ~= "table" then
     BossTrackerDB.runs = {}
+  end
+  if type(BossTrackerDB.showMainWindow) ~= "boolean" then
+    BossTrackerDB.showMainWindow = true
+  end
+  if type(BossTrackerDB.showInstancesPerHourWindow) ~= "boolean" then
+    BossTrackerDB.showInstancesPerHourWindow = true
   end
 end
 
@@ -959,8 +966,11 @@ local function IsTrackedHeroicDungeonRun(key, rec)
   if type(rec) ~= "table" then
     return false
   end
-  if rec.instanceType == "party" and type(rec.difficulty) == "number" and rec.difficulty == 2 then
-    return true
+  -- Heroic 5-player: difficulty 2 (WotLK). Include rows where meta never stored instanceType (older SV).
+  if type(rec.difficulty) == "number" and rec.difficulty == 2 and rec.instanceType ~= "raid" then
+    if rec.instanceType == "party" or rec.instanceType == nil then
+      return true
+    end
   end
   -- Legacy rows: only synthetic keys embed difficulty when [8] was missing.
   if not IsSyntheticInstanceRunKey(key) then
@@ -1042,6 +1052,9 @@ local function ApplyInstanceRunState()
       defeatedBoss = {},
     }
     runs[key] = rec
+    if type(BossTrackerLockout_RecordNewInstanceEnter) == "function" then
+      BossTrackerLockout_RecordNewInstanceEnter(rec.startServerTime)
+    end
     timerStart = GetTime()
     timerPausedAt = nil
   else
@@ -1138,7 +1151,12 @@ local function UpdateVisibility()
     end
     lastTrackedInstanceName = instName
     RefreshBossList()
-    frame:Show()
+    EnsureDB()
+    if BossTrackerDB.showMainWindow ~= false then
+      frame:Show()
+    else
+      frame:Hide()
+    end
     inTrackedInstance = true
   else
     if inTrackedInstance then
@@ -1171,6 +1189,7 @@ local function DeferUpdateVisibility()
 end
 
 local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("ZONE_CHANGED")
@@ -1181,7 +1200,10 @@ eventFrame:RegisterEvent("CHAT_MSG_TEXT_EMOTE")
 eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 eventFrame:RegisterEvent("GOSSIP_SHOW")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
-  if event == "PLAYER_ENTERING_WORLD" then
+  if event == "PLAYER_LOGIN" then
+    -- Full heroic SV sweep as soon as the character session starts (before PEW / instance state).
+    PruneStaleHeroicDungeonRuns()
+  elseif event == "PLAYER_ENTERING_WORLD" then
     DeferUpdateVisibility()
   elseif event == "GOSSIP_SHOW" then
     if type(GetNumGossipOptions) == "function" and type(GetGossipOptions) == "function" then
@@ -1395,4 +1417,12 @@ SlashCmdList["BTDUMP"] = function()
   end
 end
 
-UpdateVisibility()
+function BossTracker_RefreshOptionsVisibility()
+  EnsureDB()
+  UpdateVisibility()
+  if type(BossTrackerLockout_ApplyFrameVisibility) == "function" then
+    BossTrackerLockout_ApplyFrameVisibility()
+  end
+end
+
+BossTracker_RefreshOptionsVisibility()
