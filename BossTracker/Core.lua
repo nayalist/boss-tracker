@@ -189,6 +189,12 @@ local function EnsureDB()
   if type(BossTrackerDB.runs) ~= "table" then
     BossTrackerDB.runs = {}
   end
+  if type(BossTrackerDB.showMainWindow) ~= "boolean" then
+    BossTrackerDB.showMainWindow = true
+  end
+  if type(BossTrackerDB.showInstancesPerHourWindow) ~= "boolean" then
+    BossTrackerDB.showInstancesPerHourWindow = true
+  end
 end
 
 -- 3.3.5 clients may not expose GetServerTime(); use Lua time() as fallback (Unix seconds).
@@ -1145,7 +1151,12 @@ local function UpdateVisibility()
     end
     lastTrackedInstanceName = instName
     RefreshBossList()
-    frame:Show()
+    EnsureDB()
+    if BossTrackerDB.showMainWindow ~= false then
+      frame:Show()
+    else
+      frame:Hide()
+    end
     inTrackedInstance = true
   else
     if inTrackedInstance then
@@ -1406,4 +1417,12 @@ SlashCmdList["BTDUMP"] = function()
   end
 end
 
-UpdateVisibility()
+function BossTracker_RefreshOptionsVisibility()
+  EnsureDB()
+  UpdateVisibility()
+  if type(BossTrackerLockout_ApplyFrameVisibility) == "function" then
+    BossTrackerLockout_ApplyFrameVisibility()
+  end
+end
+
+BossTracker_RefreshOptionsVisibility()

@@ -8,3 +8,4 @@
 BossData.lua
 LockoutTracker.lua
 Core.lua
+Options.lua

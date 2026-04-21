@@ -303,6 +303,17 @@ pruneTicker:SetScript("OnUpdate", function(_, elapsed)
   end
 end)
 
+function BossTrackerLockout_ApplyFrameVisibility()
+  if not lockoutFrame then
+    return
+  end
+  if type(BossTrackerDB) == "table" and BossTrackerDB.showInstancesPerHourWindow == false then
+    lockoutFrame:Hide()
+  else
+    lockoutFrame:Show()
+  end
+end
+
 EnsureLockoutDB()
 LockoutTracker_UpdateDisplay(false)
-lockoutFrame:Show()
+BossTrackerLockout_ApplyFrameVisibility()

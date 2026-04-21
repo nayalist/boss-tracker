@@ -463,7 +463,6 @@ BossTracker_BossData = {
   ["Stormwind Stockade"] = {
     { name = "Targorr the Dread", id = 1696 , search = "Targorr the Dread"},
     { name = "Kam Deepfury", id = 1666 , search = "Kam Deepfury"},
-    { name = "Bruegal Ironknuckle", id = 1720 , search = "Bruegal Ironknuckle"},
     { name = "Hamhock", id = 1717 , search = "Hamhock"},
     { name = "Bazil Thredd", id = 1716 , search = "Bazil Thredd"},
     { name = "Dextren Ward", id = 1663 , search = "Dextren Ward"},
@@ -490,6 +489,7 @@ BossTracker_BossData = {
     { name = "Overlord Ramtusk", id = 4420 , search = "Overlord Ramtusk"},
     { name = "Agathelos the Raging", id = 4422 , search = "Agathelos the Raging"},
     { name = "Charlga Razorflank", id = 4421 , search = "Charlga Razorflank"},
+    { name = "Roogug", id = 6168 , search = "Roogug"},
   },
   ["Razorfen Downs"] = {
     { name = "Tuten'kash", id = 7355 , search = "Tuten'kash"},
@@ -512,7 +512,6 @@ BossTracker_BossData = {
     { name = "Theka the Martyr", id = 7272 , search = "Theka the Martyr"},
     { name = "Witch Doctor Zum'rah", id = 7271 , search = "Witch Doctor Zum'rah"},
     { name = "Nekrum Gutchewer and Shadowpriest Sezz'ziz", ids = { 7796, 7275 }, all = true , search = "Nekrum Gutchewer"},
-    { name = "Sergeant Bly", id = 7604 , search = "Sergeant Bly"},
     { name = "Chief Ukorz Sandscalp and Ruuzlu", ids = { 7267, 7797 }, all = true , search = "Ruuzlu"},
     { name = "Hydromancer Velratha", id = 7795 , search = "Hydromancer Velratha"},
     { name = "Gahz'rilla", id = 7273 , search = "Gahz'rilla"},
